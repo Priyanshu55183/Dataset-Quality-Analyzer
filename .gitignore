@@ -1,0 +1,20 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+
+# Project specific
+data/
+outputs/
+screenshots/*.png
+!screenshots/main_ui.png
+
+# OS X junk
+.DS_Store
