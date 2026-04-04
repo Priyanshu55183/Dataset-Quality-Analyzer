@@ -1,20 +1,28 @@
-# 🚛 Traffic AI: Real-time Vehicle Detection
+# Dataset Evaluation & AI Reporting Platform
 
 ## 📋 Project Submission
 
-**Project Name**: <!-- e.g., VisionFlow 2026 -->
-**Team Members**: <!-- Name 1, Name 2, etc. -->
-**Track**: <!-- e.g., Traffic AI -->
+**Project Name**: Dataset Evaluation & AI Reporting Platform
+**Team Members**: Priyanshu Kumar, Kaustubh shandilya , Vinay BU
+**Track**: AI / Data Analytics / Developer Tools
 
 ---
 
 ## 🚀 Project Overview
-[Briefly describe the problem you decided to solve and your core solution.]
+Data scientists spend 30–50% of their time manually inspecting and cleaning datasets. Critical issues like missing values, bias, duplication, and class imbalance often go unnoticed until model failure.
+
+Our solution is a secure, AI-powered dataset evaluation platform that:
+
+Automatically analyzes datasets for quality issues
+Generates plain-language insights
+Provides AI-based Q&A (RAG)
+Stores dataset history for reuse
+Exports professional PDF reports
 
 ## 🏗️ Architecture
-- **Inference**: <!-- e.g., YOLOv8n on Edge -->
-- **Data Pipeline**: <!-- e.g., RTSP Stream to MQTT -->
-- **Frontend**: <!-- e.g., Streamlit Dashboard -->
+- **Inference**: LlamaIndex + ChromaDB + Grok API (RAG-based AI insights & Q&A)
+- **Data Pipeline**:Dataset Upload (CSV/Excel) → FastAPI → Polars EDA → Data Quality Metrics → Supabase Storage
+- **Frontend**:Next.js 14 + React + TailwindCSS + Shadcn/UI + Recharts/Plotly Dashboard
 
 ## 📹 Demo
 [Link to your Loom/YouTube demo or a GIF showing it in action.]
