@@ -1,6 +1,28 @@
+# Web framework
 fastapi[standard]
-uvicorn
+uvicorn[standard]
+
+# Supabase + auth
 supabase
 pyjwt[crypto]
 httpx
 python-dotenv
+
+# Data processing
+polars
+pandas
+openpyxl
+xlrd
+
+# EDA & statistics
+scipy
+scikit-learn
+numpy
+
+# PDF generation
+jinja2
+weasyprint
+
+# Utilities
+python-multipart
+aiofiles
