@@ -4,6 +4,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/useAuth";
 import { datasetsAPI, Report, ChatMessage, AlgoRecommendation } from "@/lib/api";
 import Sidebar from "@/components/layout/sidebar";
+import { RadialBarChart, RadialBar, PolarAngleAxis, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Cell } from "recharts";
 
 const API_BASE = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
 
@@ -236,12 +237,20 @@ export default function AnalysisPage() {
           {tab === 0 && (
             <div>
               <div style={{ background: "var(--bg-card)", border: "1px solid var(--bg-border)", borderRadius: 16, padding: 32, marginBottom: 24, display: "flex", alignItems: "center", gap: 32, flexWrap: "wrap" }}>
-                <div style={{ textAlign: "center" }}>
-                  <div style={{ width: 100, height: 100, borderRadius: "50%", border: `4px solid ${scoreColor(sc)}`, display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column" }}>
-                    <span style={{ fontSize: 28, fontWeight: 800, fontFamily: "var(--font-display)", color: scoreColor(sc), letterSpacing: "-1px" }}>{sc}</span>
-                    <span style={{ fontSize: 10, color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>/ 100</span>
-                  </div>
-                  <p style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 8, fontFamily: "var(--font-mono)" }}>Health Score</p>
+                <div style={{ textAlign: "center", width: 140 }}>
+                  <ResponsiveContainer width={140} height={140}>
+                    <RadialBarChart
+                      cx="50%" cy="50%" innerRadius="70%" outerRadius="100%"
+                      barSize={10} data={[{ value: sc, fill: scoreColor(sc) }]}
+                      startAngle={90} endAngle={-270}
+                    >
+                      <PolarAngleAxis type="number" domain={[0, 100]} tick={false} />
+                      <RadialBar dataKey="value" cornerRadius={6} background={{ fill: "var(--bg-border)" }} />
+                    </RadialBarChart>
+                  </ResponsiveContainer>
+                  <p style={{ fontSize: 28, fontWeight: 800, fontFamily: "var(--font-display)", color: scoreColor(sc), marginTop: -56, letterSpacing: "-1px" }}>{sc}</p>
+                  <p style={{ fontSize: 10, color: "var(--text-muted)", fontFamily: "var(--font-mono)", marginTop: 40 }}>/ 100</p>
+                  <p style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 4, fontFamily: "var(--font-mono)" }}>Health Score</p>
                 </div>
                 <div style={{ flex: 1, minWidth: 200 }}>
                   <h2 style={{ fontFamily: "var(--font-display)", fontSize: 20, fontWeight: 700, marginBottom: 6 }}>
@@ -279,6 +288,43 @@ export default function AnalysisPage() {
                 <StatCard label="Duplicate Rows" value={report.duplicate_rows} color={report.duplicate_rows > 0 ? "var(--accent-red)" : "var(--accent-green)"} />
                 <StatCard label="Outliers" value={report.outlier_count} sub="across all numeric cols" color={report.outlier_count > 0 ? "var(--accent)" : "var(--accent-green)"} />
               </div>
+
+              {report.columns && report.columns.length > 0 && (
+                <div style={{ background: "var(--bg-card)", border: "1px solid var(--bg-border)", borderRadius: 16, padding: 28, marginBottom: 24 }}>
+                  <h3 style={{ fontFamily: "var(--font-display)", fontSize: 15, fontWeight: 700, marginBottom: 20, color: "var(--text-primary)" }}>
+                    Missing Values by Column
+                  </h3>
+                  <ResponsiveContainer width="100%" height={220}>
+                    <BarChart
+                      data={report.columns
+                        .filter(c => (c.missing_pct || 0) > 0)
+                        .sort((a, b) => (b.missing_pct || 0) - (a.missing_pct || 0))
+                        .slice(0, 12)
+                        .map(c => ({ name: c.name, value: parseFloat((c.missing_pct || 0).toFixed(1)) }))}
+                      margin={{ top: 0, right: 16, left: 0, bottom: 40 }}
+                    >
+                      <XAxis dataKey="name" tick={{ fontSize: 11, fill: "var(--text-muted)", fontFamily: "var(--font-mono)" }} angle={-35} textAnchor="end" interval={0} />
+                      <YAxis tick={{ fontSize: 11, fill: "var(--text-muted)" }} unit="%" domain={[0, 100]} />
+                      <Tooltip
+                        contentStyle={{ background: "var(--bg-secondary)", border: "1px solid var(--bg-border)", borderRadius: 8, fontSize: 12 }}
+                        formatter={(v) => [`${Number(v ?? 0)}%`, "Missing"]}
+                      />
+                      <Bar dataKey="value" radius={[4, 4, 0, 0]}>
+                        {report.columns
+                          .filter(c => (c.missing_pct || 0) > 0)
+                          .sort((a, b) => (b.missing_pct || 0) - (a.missing_pct || 0))
+                          .slice(0, 12)
+                          .map((c, i) => (
+                            <Cell key={i} fill={(c.missing_pct || 0) > 20 ? "var(--accent-red)" : (c.missing_pct || 0) > 10 ? "var(--accent)" : "var(--accent-blue)"} />
+                          ))}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                  {report.columns.every(c => !c.missing_pct || c.missing_pct === 0) && (
+                    <p style={{ color: "var(--accent-green)", fontSize: 13, textAlign: "center", marginTop: 8 }}>✓ No missing values found</p>
+                  )}
+                </div>
+              )}
             </div>
           )}
 
@@ -297,6 +343,49 @@ export default function AnalysisPage() {
                     </div>
                     <ProgressBar value={col.missing_pct || 0} color={(col.missing_pct || 0) > 10 ? "var(--accent-red)" : "var(--accent-green)"} />
                   </div>
+                  {col.mean !== undefined && (
+                    <div style={{ marginTop: 12, borderTop: "1px solid var(--bg-border)", paddingTop: 12 }}>
+                      <p style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: "var(--font-mono)", marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.4px" }}>Stats</p>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                        {[
+                          { label: "Mean", val: col.mean?.toFixed(2) },
+                          { label: "Std Dev", val: col.std?.toFixed(2) },
+                          { label: "Min", val: col.min?.toFixed(2) },
+                          { label: "Max", val: col.max?.toFixed(2) },
+                        ].map(s => (
+                          <div key={s.label} style={{ display: "flex", justifyContent: "space-between", fontSize: 12 }}>
+                            <span style={{ color: "var(--text-muted)" }}>{s.label}</span>
+                            <span style={{ fontFamily: "var(--font-mono)", color: "var(--text-secondary)" }}>{s.val ?? "—"}</span>
+                          </div>
+                        ))}
+                        {(col.outlier_pct || 0) > 0 && (
+                          <div style={{ marginTop: 6 }}>
+                            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 4 }}>
+                              <span style={{ color: "var(--text-muted)" }}>Outliers</span>
+                              <span style={{ fontFamily: "var(--font-mono)", color: (col.outlier_pct || 0) > 5 ? "var(--accent-red)" : "var(--accent)" }}>{(col.outlier_pct || 0).toFixed(1)}%</span>
+                            </div>
+                            <ProgressBar value={col.outlier_pct || 0} color={(col.outlier_pct || 0) > 5 ? "var(--accent-red)" : "var(--accent)"} />
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                  {col.top_values && Object.keys(col.top_values).length > 0 && (
+                    <div style={{ marginTop: 12, borderTop: "1px solid var(--bg-border)", paddingTop: 12 }}>
+                      <p style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: "var(--font-mono)", marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.4px" }}>Top Values</p>
+                      <ResponsiveContainer width="100%" height={100}>
+                        <BarChart
+                          data={Object.entries(col.top_values).slice(0, 5).map(([k, v]) => ({ name: k, count: v }))}
+                          margin={{ top: 0, right: 0, left: -20, bottom: 0 }}
+                        >
+                          <XAxis dataKey="name" tick={{ fontSize: 9, fill: "var(--text-muted)" }} />
+                          <YAxis tick={{ fontSize: 9, fill: "var(--text-muted)" }} />
+                          <Tooltip contentStyle={{ background: "var(--bg-secondary)", border: "1px solid var(--bg-border)", borderRadius: 6, fontSize: 11 }} />
+                          <Bar dataKey="count" fill="var(--accent-blue)" radius={[3, 3, 0, 0]} />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -309,19 +398,37 @@ export default function AnalysisPage() {
                 {(!report.correlations || report.correlations.length === 0) ? (
                   <p style={{ color: "var(--text-secondary)", fontSize: 14 }}>No significant correlations found.</p>
                 ) : (
-                  <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                    {report.correlations.slice(0, 20).map((c, i) => {
-                      const abs = Math.abs(c.value);
-                      const barColor = abs > 0.7 ? "var(--accent-red)" : abs > 0.4 ? "var(--accent)" : "var(--accent-blue)";
-                      return (
-                        <div key={i} style={{ display: "grid", gridTemplateColumns: "140px 140px 60px 1fr", gap: 12, alignItems: "center" }}>
-                          <span style={{ fontSize: 13, fontFamily: "var(--font-mono)", color: "var(--text-secondary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.col1}</span>
-                          <span style={{ fontSize: 13, fontFamily: "var(--font-mono)", color: "var(--text-secondary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.col2}</span>
-                          <span style={{ fontSize: 13, fontFamily: "var(--font-mono)", color: barColor, textAlign: "right" }}>{c.value.toFixed(3)}</span>
-                          <ProgressBar value={abs * 100} color={barColor} />
-                        </div>
-                      );
-                    })}
+                  <div>
+                    <ResponsiveContainer width="100%" height={Math.max(200, Math.min(report.correlations.length, 15) * 36 + 40)}>
+                      <BarChart
+                        layout="vertical"
+                        data={report.correlations
+                          .slice(0, 15)
+                          .map(c => ({
+                            name: `${c.col1} × ${c.col2}`,
+                            value: parseFloat(c.value.toFixed(3)),
+                            abs: parseFloat(Math.abs(c.value).toFixed(3)),
+                          }))}
+                        margin={{ top: 0, right: 60, left: 8, bottom: 0 }}
+                      >
+                        <XAxis type="number" domain={[-1, 1]} tick={{ fontSize: 11, fill: "var(--text-muted)" }} tickFormatter={v => v.toFixed(1)} />
+                        <YAxis type="category" dataKey="name" width={200} tick={{ fontSize: 11, fill: "var(--text-muted)", fontFamily: "var(--font-mono)" }} />
+                        <Tooltip
+                          contentStyle={{ background: "var(--bg-secondary)", border: "1px solid var(--bg-border)", borderRadius: 8, fontSize: 12 }}
+                          formatter={(v) => [Number(v ?? 0).toFixed(3), "Correlation"]}
+                        />
+                        <Bar dataKey="value" radius={[0, 4, 4, 0]}>
+                          {report.correlations.slice(0, 15).map((c, i) => (
+                            <Cell key={i} fill={Math.abs(c.value) > 0.7 ? "var(--accent-red)" : Math.abs(c.value) > 0.4 ? "var(--accent)" : "var(--accent-blue)"} />
+                          ))}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                    <div style={{ display: "flex", gap: 16, marginTop: 16, fontSize: 12, color: "var(--text-muted)" }}>
+                      <span style={{ display: "flex", alignItems: "center", gap: 6 }}><span style={{ width: 10, height: 10, borderRadius: 2, background: "var(--accent-red)", display: "inline-block" }} /> Strong (&gt;0.7)</span>
+                      <span style={{ display: "flex", alignItems: "center", gap: 6 }}><span style={{ width: 10, height: 10, borderRadius: 2, background: "var(--accent)", display: "inline-block" }} /> Moderate (0.4–0.7)</span>
+                      <span style={{ display: "flex", alignItems: "center", gap: 6 }}><span style={{ width: 10, height: 10, borderRadius: 2, background: "var(--accent-blue)", display: "inline-block" }} /> Weak (&lt;0.4)</span>
+                    </div>
                   </div>
                 )}
               </div>
