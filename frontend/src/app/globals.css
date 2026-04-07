@@ -7,6 +7,7 @@
 }
 
 :root {
+  --bg-base: #0f172a;
   --bg-primary: linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #1e1b4b 100%);
   --bg-secondary: #1e293b;
   --bg-card: #334155;
@@ -25,6 +26,7 @@
 
 @media (prefers-color-scheme: light) {
   :root {
+    --bg-base: #f8fafc;
     --bg-primary: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 50%, #e2e8f0 100%);
     --bg-secondary: #f1f5f9;
     --bg-card: #e2e8f0;
@@ -44,7 +46,8 @@ html, body {
 }
 
 body {
-  background: var(--bg-primary);
+  background-color: var(--bg-base);
+  background-image: var(--bg-primary);
   color: var(--text-primary);
   font-family: var(--font-body);
   position: relative;

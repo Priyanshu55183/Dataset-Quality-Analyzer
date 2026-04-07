@@ -9,7 +9,6 @@ from pathlib import Path
 from typing import Any
 
 from jinja2 import Environment, FileSystemLoader, pass_environment
-from weasyprint import HTML
 
 TEMPLATES_DIR = Path(__file__).parent.parent / "templates"
 
@@ -45,6 +44,11 @@ def generate_pdf(report: dict[str, Any], algos: list[dict[str, Any]]) -> bytes:
     Returns:
         PDF as bytes.
     """
+    try:
+        from weasyprint import HTML
+    except Exception as exc:
+        raise RuntimeError("WeasyPrint not available in this environment") from exc
+
     env = _make_jinja_env()
     template = env.get_template("report.html")
 

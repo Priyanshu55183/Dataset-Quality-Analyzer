@@ -159,6 +159,73 @@ async def get_report(
     return report_data
 
 
+@router.get("/{dataset_id}/summary")
+async def get_dataset_summary(
+    dataset_id: str,
+    user_id: str = Depends(get_current_user),
+):
+    """Return dashboard summary metrics for a dataset owned by the current user."""
+    supabase = get_supabase()
+    resp = (
+        supabase.table("datasets")
+        .select("id, report")
+        .eq("id", dataset_id)
+        .eq("user_id", user_id)
+        .single()
+        .execute()
+    )
+    if not resp.data:
+        raise HTTPException(status_code=404, detail="Dataset not found.")
+
+    report_raw = resp.data.get("report")
+    if report_raw is None:
+        raise HTTPException(status_code=404, detail="Dataset report not found.")
+
+    if isinstance(report_raw, str):
+        try:
+            report = json.loads(report_raw)
+        except json.JSONDecodeError:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Stored dataset report is invalid JSON.",
+            )
+    elif isinstance(report_raw, dict):
+        report = report_raw
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Stored dataset report has unsupported format.",
+        )
+
+    def as_int(value) -> int:
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return 0
+
+    def as_float(value) -> float:
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return 0.0
+
+    def as_str_list(value) -> list[str]:
+        if not isinstance(value, list):
+            return []
+        return [str(item) for item in value if item is not None]
+
+    return {
+        "health_score": as_int(report.get("health_score")),
+        "missing_pct": as_float(report.get("missing_pct")),
+        "duplicate_rows": as_int(report.get("duplicate_rows")),
+        "outlier_count": as_int(report.get("outlier_count")),
+        "total_rows": as_int(report.get("total_rows")),
+        "total_columns": as_int(report.get("total_columns")),
+        "bias_flags": as_str_list(report.get("bias_flags")),
+        "recommendations": as_str_list(report.get("recommendations")),
+    }
+
+
 # ── Delete dataset ────────────────────────────────────────────────────────────
 
 @router.delete("/{dataset_id}")

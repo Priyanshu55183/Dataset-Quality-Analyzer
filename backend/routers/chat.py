@@ -10,19 +10,176 @@ NOTE: This is a rule-based stub that answers from the stored report.
 """
 
 import json
+import os
+import asyncio
+import logging
+import re
 import uuid
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
+from openai import AsyncOpenAI
 from pydantic import BaseModel
 
 from auth import get_current_user, get_supabase
 
 router = APIRouter(tags=["chat"])
+logger = logging.getLogger(__name__)
+
+LLM_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+LLM_TIMEOUT_SECONDS = float(os.getenv("OPENAI_TIMEOUT_SECONDS", "20"))
+LLM_MAX_RETRIES = int(os.getenv("OPENAI_MAX_RETRIES", "3"))
+LLM_MAX_REPORT_CHARS = int(os.getenv("OPENAI_MAX_REPORT_CHARS", "12000"))
+LLM_MAX_OUTPUT_TOKENS = int(os.getenv("OPENAI_MAX_OUTPUT_TOKENS", "350"))
 
 
 class ChatRequest(BaseModel):
     question: str
+
+
+def _safe_int(value, default: int) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _truncate_report(report: dict) -> dict:
+    """Keep only high-value fields and limit large arrays for LLM grounding."""
+    columns = report.get("columns") or []
+    correlations = report.get("correlations") or []
+
+    truncated = {
+        "health_score": report.get("health_score"),
+        "missing_pct": report.get("missing_pct"),
+        "duplicate_rows": report.get("duplicate_rows"),
+        "bias_flags": (report.get("bias_flags") or [])[:20],
+        "recommendations": (report.get("recommendations") or [])[:20],
+        "columns": columns[:20] if isinstance(columns, list) else [],
+        "correlations": correlations[:10] if isinstance(correlations, list) else [],
+    }
+
+    if "dataset_name" in report:
+        truncated["dataset_name"] = report.get("dataset_name")
+
+    return truncated
+
+
+def _compact_report_json(report: dict, max_chars: int) -> str:
+    """Serialize report safely and reduce variable sections until within size limits."""
+    payload = _truncate_report(report)
+    serialized = json.dumps(payload, separators=(",", ":"), default=str)
+    if len(serialized) <= max_chars:
+        return serialized
+
+    columns = payload.get("columns", []) if isinstance(payload.get("columns"), list) else []
+    correlations = payload.get("correlations", []) if isinstance(payload.get("correlations"), list) else []
+
+    while len(serialized) > max_chars and (len(columns) > 0 or len(correlations) > 0):
+        if len(columns) >= len(correlations) and len(columns) > 0:
+            columns = columns[:-1]
+            payload["columns"] = columns
+        elif len(correlations) > 0:
+            correlations = correlations[:-1]
+            payload["correlations"] = correlations
+        serialized = json.dumps(payload, separators=(",", ":"), default=str)
+
+    if len(serialized) > max_chars:
+        payload["recommendations"] = (payload.get("recommendations") or [])[:5]
+        payload["bias_flags"] = (payload.get("bias_flags") or [])[:5]
+        payload["columns"] = []
+        payload["correlations"] = []
+        payload["truncated"] = True
+        serialized = json.dumps(payload, separators=(",", ":"), default=str)
+
+    if len(serialized) > max_chars:
+        minimal_payload = {
+            "health_score": payload.get("health_score"),
+            "missing_pct": payload.get("missing_pct"),
+            "duplicate_rows": payload.get("duplicate_rows"),
+            "truncated": True,
+        }
+        return json.dumps(minimal_payload, separators=(",", ":"), default=str)
+
+    return serialized
+
+
+def _clean_response_text(text: str) -> str:
+    """Normalize model output to plain text without markdown fences."""
+    cleaned = (text or "").strip()
+
+    fenced = re.match(r"^```[a-zA-Z0-9_-]*\s*([\s\S]*?)\s*```$", cleaned)
+    if fenced:
+        cleaned = fenced.group(1).strip()
+
+    cleaned = cleaned.replace("```", "").strip()
+    return cleaned
+
+
+async def _llm_answer(question: str, report: dict) -> str:
+    """Answer from report using an OpenAI-compatible API, with safe fallback."""
+    report_json = _compact_report_json(report, max(2000, LLM_MAX_REPORT_CHARS))
+    system_prompt = (
+        "You are an expert data scientist performing dataset quality analysis.\n"
+        "You must answer ONLY using the dataset report JSON.\n"
+        "Do not hallucinate.\n"
+        "If information is missing say \"Not found in dataset analysis\".\n\n"
+        "When answering:\n\n"
+        "* Mention column names explicitly\n"
+        "* Provide numeric values when available\n"
+        "* Explain impact on ML models\n"
+        "* Suggest concrete fixes\n"
+        "* Be concise (max 6 sentences)"
+    )
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": f"REPORT:\n{report_json}\n\nQUESTION:\n{question}"},
+    ]
+
+    api_key = os.getenv("OPENAI_API_KEY")
+    base_url = os.getenv("OPENAI_BASE_URL")
+
+    if not api_key:
+        logger.warning("OPENAI_API_KEY is not configured, falling back to rule-based answerer.")
+        return _answer_from_report(question, report)
+
+    client = AsyncOpenAI(
+        api_key=api_key,
+        base_url=base_url,
+        timeout=LLM_TIMEOUT_SECONDS,
+        max_retries=0,
+    )
+
+    attempts = max(1, _safe_int(LLM_MAX_RETRIES, 3))
+    for attempt in range(attempts):
+        try:
+            response = await client.chat.completions.create(
+                model=LLM_MODEL,
+                messages=messages,
+                temperature=0.2,
+                max_tokens=400,
+            )
+
+            choice = response.choices[0] if response.choices else None
+            text = ""
+            if choice and choice.message and choice.message.content:
+                text = _clean_response_text(choice.message.content)
+            if text:
+                return text
+
+            logger.warning("LLM returned empty output, falling back to rule-based answer.")
+            return _answer_from_report(question, report)
+        except Exception as exc:
+            logger.warning(
+                "LLM attempt %s/%s failed: %s",
+                attempt + 1,
+                attempts,
+                str(exc),
+            )
+            if attempt < attempts - 1:
+                await asyncio.sleep(0.5 * (2 ** attempt))
+
+    return _answer_from_report(question, report)
 
 
 # ── Simple rule-based answerer (replace with RAG later) ───────────────────────
@@ -167,7 +324,7 @@ async def chat(
         report = json.loads(report)
     report["dataset_name"] = resp.data["name"]
 
-    answer = _answer_from_report(body.question, report)
+    answer = await _llm_answer(body.question, report)
 
     # Persist both messages to `chats` table
     now = datetime.now(timezone.utc).isoformat()

@@ -7,6 +7,7 @@ supabase
 pyjwt[crypto]
 httpx
 python-dotenv
+openai
 
 # Data processing
 polars
